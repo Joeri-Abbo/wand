@@ -15,11 +15,14 @@ A magical CLI tool to connect to your servers via RDP and SSH with a flick of yo
 
 Run the following in your terminal:
 
+
+
 ```zsh
-curl -fsSL https://raw.githubusercontent.com/Joeri-Abbo/wand/stable/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Joeri-Abbo/wand/master/install.sh | bash
 ```
 
 This will:
+
 - Install Go (if needed, macOS/Homebrew only)
 - Clone the repo to `~/wand`
 - Build the binary
