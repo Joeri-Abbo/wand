@@ -1,16 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"encoding/json"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
@@ -113,9 +113,10 @@ func main() {
 	}
 
    rootCmd := &cobra.Command{
-	   Use:   "wand",
+	   Use:   "wand [group] [machine]",
 	   Short: "A stylish CLI tool using lipgloss",
 	   Long:  style.Render("wand: A stylish CLI tool using lipgloss"),
+	   Args:  cobra.MaximumNArgs(2),
 	   Run: func(cmd *cobra.Command, args []string) {
 		   configPath := filepath.Join(os.Getenv("HOME"), ".wand", "config.json")
 		   f, err := os.Open(configPath)
@@ -149,47 +150,107 @@ func main() {
 			   return
 		   }
 
-		   // Bubble Tea group selection
-		   groupItems := make([]list.Item, len(groups))
-		   for i, g := range groups {
-			   groupItems[i] = item(g)
+		   var selectedGroup string
+		   var selectedMachineName string
+		   var machines []map[string]interface{}
+
+		   if len(args) > 0 {
+			   // Group provided as arg
+			   selectedGroup = args[0]
+			   var found bool
+			   for _, g := range groups {
+				   if g == selectedGroup {
+					   found = true
+					   break
+				   }
+			   }
+			   if !found {
+				   fmt.Println(style.Render("Group not found: "), selectedGroup)
+				   return
+			   }
+			   machines = groupMap[selectedGroup]
+			   if len(machines) == 0 {
+				   fmt.Println(style.Render("No machines found in group."))
+				   return
+			   }
+			   if len(args) > 1 {
+				   // Machine provided as arg
+				   selectedMachineName = args[1]
+				   var foundMachine bool
+				   for _, m := range machines {
+					   if m["name"] == selectedMachineName {
+						   foundMachine = true
+						   break
+					   }
+				   }
+				   if !foundMachine {
+					   fmt.Println(style.Render("Machine not found in group: "), selectedMachineName)
+					   return
+				   }
+			   } else {
+				   // No machine arg, show machine selector
+				   machineItems := make([]list.Item, len(machines))
+				   for i, m := range machines {
+					   machineItems[i] = item(m["name"].(string))
+				   }
+				   machineList := list.New(machineItems, itemDelegate{}, 40, 12)
+				   machineList.Title = "Select a machine"
+				   p2 := tea.NewProgram(&selectorModel{list: machineList})
+				   m2, err := p2.Run()
+				   if err != nil {
+					   fmt.Println("Error running machine selector:", err)
+					   return
+				   }
+				   selectedMachineName = m2.(*selectorModel).selected
+				   if selectedMachineName == "" {
+					   fmt.Println("No machine selected.")
+					   return
+				   }
+			   }
+		   } else {
+			   // No args, show group selector
+			   groupItems := make([]list.Item, len(groups))
+			   for i, g := range groups {
+				   groupItems[i] = item(g)
+			   }
+			   groupList := list.New(groupItems, itemDelegate{}, 40, 10)
+			   groupList.Title = "Select a group"
+			   p := tea.NewProgram(&selectorModel{list: groupList})
+			   m, err := p.Run()
+			   if err != nil {
+				   fmt.Println("Error running group selector:", err)
+				   return
+			   }
+			   selectedGroup = m.(*selectorModel).selected
+			   if selectedGroup == "" {
+				   fmt.Println("No group selected.")
+				   return
+			   }
+			   machines = groupMap[selectedGroup]
+			   if len(machines) == 0 {
+				   fmt.Println(style.Render("No machines found in group."))
+				   return
+			   }
+			   // Show machine selector
+			   machineItems := make([]list.Item, len(machines))
+			   for i, m := range machines {
+				   machineItems[i] = item(m["name"].(string))
+			   }
+			   machineList := list.New(machineItems, itemDelegate{}, 40, 12)
+			   machineList.Title = "Select a machine"
+			   p2 := tea.NewProgram(&selectorModel{list: machineList})
+			   m2, err := p2.Run()
+			   if err != nil {
+				   fmt.Println("Error running machine selector:", err)
+				   return
+			   }
+			   selectedMachineName = m2.(*selectorModel).selected
+			   if selectedMachineName == "" {
+				   fmt.Println("No machine selected.")
+				   return
+			   }
 		   }
-		   groupList := list.New(groupItems, itemDelegate{}, 40, 10)
-		   groupList.Title = "Select a group"
-		   p := tea.NewProgram(&selectorModel{list: groupList})
-		   m, err := p.Run()
-		   if err != nil {
-			   fmt.Println("Error running group selector:", err)
-			   return
-		   }
-		   selectedGroup := m.(*selectorModel).selected
-		   if selectedGroup == "" {
-			   fmt.Println("No group selected.")
-			   return
-		   }
-		   machines := groupMap[selectedGroup]
-		   if len(machines) == 0 {
-			   fmt.Println(style.Render("No machines found in group."))
-			   return
-		   }
-		   // Bubble Tea machine selection
-		   machineItems := make([]list.Item, len(machines))
-		   for i, m := range machines {
-			   machineItems[i] = item(m["name"].(string))
-		   }
-		   machineList := list.New(machineItems, itemDelegate{}, 40, 12)
-		   machineList.Title = "Select a machine"
-		   p2 := tea.NewProgram(&selectorModel{list: machineList})
-		   m2, err := p2.Run()
-		   if err != nil {
-			   fmt.Println("Error running machine selector:", err)
-			   return
-		   }
-		   selectedMachineName := m2.(*selectorModel).selected
-		   if selectedMachineName == "" {
-			   fmt.Println("No machine selected.")
-			   return
-		   }
+
 		   // Find the selected machine
 		   var selectedMachine map[string]interface{}
 		   for _, m := range machines {
@@ -363,8 +424,8 @@ func main() {
 		   if err != nil {
 			   fmt.Println(style.Render("SSH connection failed:"), err)
 		   }
-		},
-	}
+	   },
+   }
    rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Show debug output")
    rootCmd.AddCommand(editCmd)
    rootCmd.Execute()
