@@ -1,0 +1,25 @@
+[
+  {
+    "LWZ": [
+      {
+        "connection": "rdp",
+        "name": "winmachine001",
+        "user": "jabbo",
+        "host": "12.345.678.90"
+      },
+      {
+        "connection": "ssh",
+        "name": "linuxjump001",
+        "host": "12.345.678.90",
+        "user": "jabbo",
+        "identityFile": ["~/.ssh/id_rsa"]
+      },
+      {
+        "name": "secretvpn001",
+        "uses_jumpHost": true,
+        "host": "12.345.678.90",
+        "jumpHost": ["linuxjump001"]
+      }
+    ]
+  }
+]
