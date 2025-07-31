@@ -430,13 +430,3 @@ func main() {
 	rootCmd.AddCommand(editCmd)
 	rootCmd.Execute()
 }
-
-// containsShellSpecial returns true if the string contains shell-special characters
-func containsShellSpecial(s string) bool {
-	for _, c := range s {
-		if c == ' ' || c == '\t' || c == '\'' || c == '"' || c == '$' || c == '`' || c == '\\' {
-			return true
-		}
-	}
-	return false
-}
