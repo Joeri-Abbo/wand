@@ -1,15 +1,70 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
+	   "fmt"
+	   "io"
+	   "os"
+	   "os/exec"
+	   "path/filepath"
+	   "encoding/json"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/spf13/cobra"
+	   tea "github.com/charmbracelet/bubbletea"
+	   "github.com/charmbracelet/bubbles/list"
+	   "github.com/charmbracelet/lipgloss"
+	   "github.com/spf13/cobra"
 )
+
+// Bubble Tea item and selector model for interactive selection
+type item string
+
+func (i item) FilterValue() string { return string(i) }
+
+type selectorModel struct {
+	   list     list.Model
+	   selected string
+}
+
+func (m *selectorModel) Init() tea.Cmd {
+	   return nil
+}
+
+func (m *selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	   switch msg := msg.(type) {
+	   case tea.KeyMsg:
+			   switch msg.String() {
+			   case "enter":
+					   if sel := m.list.SelectedItem(); sel != nil {
+							   m.selected = sel.FilterValue()
+					   }
+					   return m, tea.Quit
+			   case "ctrl+c", "q":
+					   m.selected = ""
+					   return m, tea.Quit
+			   }
+	   }
+	   var cmd tea.Cmd
+	   m.list, cmd = m.list.Update(msg)
+	   return m, cmd
+}
+
+func (m *selectorModel) View() string {
+	   return m.list.View()
+}
+
+
+type itemDelegate struct{}
+
+func (d itemDelegate) Height() int                               { return 1 }
+func (d itemDelegate) Spacing() int                              { return 0 }
+func (d itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, i list.Item) {
+	   selected := index == m.Index()
+	   s := fmt.Sprintf("  %s", i.FilterValue())
+	   if selected {
+			   s = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true).Render("> " + i.FilterValue())
+	   }
+	   fmt.Fprintln(w, s)
+}
 
 var style = lipgloss.NewStyle().
 	Bold(true).
@@ -43,78 +98,96 @@ func main() {
 		},
 	}
 
-	rootCmd := &cobra.Command{
-		Use:   "wand",
-		Short: "A stylish CLI tool using lipgloss",
-		Long:  style.Render("wand: A stylish CLI tool using lipgloss"),
-		Run: func(cmd *cobra.Command, args []string) {
-			configPath := filepath.Join(os.Getenv("HOME"), ".wand", "config.json")
-			f, err := os.Open(configPath)
-			if err != nil {
-				fmt.Println(style.Render("Config file not found. Use 'wand edit' to create it."))
-				return
-			}
-			defer f.Close()
-			var data []map[string]interface{}
-			dec := json.NewDecoder(f)
-			if err := dec.Decode(&data); err != nil {
-				fmt.Println(style.Render("Failed to parse config file."))
-				return
-			}
-			var groups []string
-			for _, entry := range data {
-				for k := range entry {
-					groups = append(groups, k)
-				}
-			}
-			if len(groups) == 0 {
-				fmt.Println(style.Render("No groups found in config."))
-				return
-			}
-			groupStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4")).PaddingLeft(2)
-			fmt.Println(style.Render("Select a group:"))
-			for i, g := range groups {
-				fmt.Printf("%s %s\n", groupStyle.Render(fmt.Sprintf("[%d]", i+1)), g)
-			}
-			fmt.Print(style.Render("Enter number: "))
-			var sel int
-			_, err = fmt.Scanln(&sel)
-			if err != nil || sel < 1 || sel > len(groups) {
-				fmt.Println(style.Render("Invalid selection."))
-				return
-			}
-			selectedGroup := groups[sel-1]
-			// Find machines in selected group
-			var machines []map[string]interface{}
-			for _, entry := range data {
-				if v, ok := entry[selectedGroup]; ok {
-					if arr, ok := v.([]interface{}); ok {
-						for _, m := range arr {
-							if mMap, ok := m.(map[string]interface{}); ok {
-								machines = append(machines, mMap)
-							}
-						}
-					}
-				}
-			}
-			if len(machines) == 0 {
-				fmt.Println(style.Render("No machines found in group."))
-				return
-			}
-			machineStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FAFAFA")).Background(lipgloss.Color("#7D56F4")).PaddingLeft(2)
-			fmt.Println(style.Render("Available machines:"))
-			for i, m := range machines {
-				name, _ := m["name"].(string)
-				fmt.Printf("%s %s\n", machineStyle.Render(fmt.Sprintf("[%d]", i+1)), name)
-			}
-			fmt.Print(style.Render("Select a machine by number: "))
-			var msel int
-			_, err = fmt.Scanln(&msel)
-			if err != nil || msel < 1 || msel > len(machines) {
-				fmt.Println(style.Render("Invalid machine selection."))
-				return
-			}
-			selectedMachine := machines[msel-1]
+   rootCmd := &cobra.Command{
+	   Use:   "wand",
+	   Short: "A stylish CLI tool using lipgloss",
+	   Long:  style.Render("wand: A stylish CLI tool using lipgloss"),
+	   Run: func(cmd *cobra.Command, args []string) {
+		   configPath := filepath.Join(os.Getenv("HOME"), ".wand", "config.json")
+		   f, err := os.Open(configPath)
+		   if err != nil {
+			   fmt.Println(style.Render("Config file not found. Use 'wand edit' to create it."))
+			   return
+		   }
+		   defer f.Close()
+		   var data []map[string]interface{}
+		   dec := json.NewDecoder(f)
+		   if err := dec.Decode(&data); err != nil {
+			   fmt.Println(style.Render("Failed to parse config file."))
+			   return
+		   }
+		   var groups []string
+		   var groupMap = make(map[string][]map[string]interface{})
+		   for _, entry := range data {
+			   for k, v := range entry {
+				   groups = append(groups, k)
+				   if arr, ok := v.([]interface{}); ok {
+					   for _, m := range arr {
+						   if mMap, ok := m.(map[string]interface{}); ok {
+							   groupMap[k] = append(groupMap[k], mMap)
+						   }
+					   }
+				   }
+			   }
+		   }
+		   if len(groups) == 0 {
+			   fmt.Println(style.Render("No groups found in config."))
+			   return
+		   }
+
+		   // Bubble Tea group selection
+		   groupItems := make([]list.Item, len(groups))
+		   for i, g := range groups {
+			   groupItems[i] = item(g)
+		   }
+		   groupList := list.New(groupItems, itemDelegate{}, 40, 10)
+		   groupList.Title = "Select a group"
+		   p := tea.NewProgram(&selectorModel{list: groupList})
+		   m, err := p.Run()
+		   if err != nil {
+			   fmt.Println("Error running group selector:", err)
+			   return
+		   }
+		   selectedGroup := m.(*selectorModel).selected
+		   if selectedGroup == "" {
+			   fmt.Println("No group selected.")
+			   return
+		   }
+		   machines := groupMap[selectedGroup]
+		   if len(machines) == 0 {
+			   fmt.Println(style.Render("No machines found in group."))
+			   return
+		   }
+		   // Bubble Tea machine selection
+		   machineItems := make([]list.Item, len(machines))
+		   for i, m := range machines {
+			   machineItems[i] = item(m["name"].(string))
+		   }
+		   machineList := list.New(machineItems, itemDelegate{}, 40, 12)
+		   machineList.Title = "Select a machine"
+		   p2 := tea.NewProgram(&selectorModel{list: machineList})
+		   m2, err := p2.Run()
+		   if err != nil {
+			   fmt.Println("Error running machine selector:", err)
+			   return
+		   }
+		   selectedMachineName := m2.(*selectorModel).selected
+		   if selectedMachineName == "" {
+			   fmt.Println("No machine selected.")
+			   return
+		   }
+		   // Find the selected machine
+		   var selectedMachine map[string]interface{}
+		   for _, m := range machines {
+			   if m["name"] == selectedMachineName {
+				   selectedMachine = m
+				   break
+			   }
+		   }
+		   if selectedMachine == nil {
+			   fmt.Println("Machine not found.")
+			   return
+		   }
 		   name, _ := selectedMachine["name"].(string)
 		   user, _ := selectedMachine["user"].(string)
 		   host, _ := selectedMachine["host"].(string)
