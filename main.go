@@ -1,22 +1,23 @@
 package main
 
 import (
-	   "fmt"
-	   "io"
-	   "os"
-	   "os/exec"
-	   "path/filepath"
-	   "encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"encoding/json"
+	"time"
 
-	   tea "github.com/charmbracelet/bubbletea"
-	   "github.com/charmbracelet/bubbles/list"
-	   "github.com/charmbracelet/lipgloss"
-	   "github.com/spf13/cobra"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/cobra"
 )
 
 // Bubble Tea item and selector model for interactive selection
 type item string
-
+	
 func (i item) FilterValue() string { return string(i) }
 
 type selectorModel struct {
@@ -50,7 +51,6 @@ func (m *selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *selectorModel) View() string {
 	   return m.list.View()
 }
-
 
 type itemDelegate struct{}
 
@@ -207,6 +207,64 @@ func main() {
 				   return
 			   }
 			   tmpFile.Close()
+
+			   // Check if Microsoft Remote Desktop is running
+			   isRunning := false
+			   fmt.Println("[DEBUG] Checking if Microsoft Remote Desktop or Windows App is running...")
+			   isRunning = false
+			   checkCmd1 := exec.Command("pgrep", "-f", "Microsoft Remote Desktop")
+			   checkCmd2 := exec.Command("pgrep", "-f", "Windows App")
+			   if err := checkCmd1.Run(); err == nil {
+				   isRunning = true
+				   fmt.Println("[DEBUG] Microsoft Remote Desktop is already running.")
+			   } else if err := checkCmd2.Run(); err == nil {
+				   isRunning = true
+				   fmt.Println("[DEBUG] Windows App is already running.")
+			   } else {
+				   fmt.Println("[DEBUG] Neither Microsoft Remote Desktop nor Windows App is running.")
+				   // Print process list for debugging
+				   psCmd := exec.Command("ps", "aux")
+				   grepCmd := exec.Command("egrep", `Microsoft Remote Desktop|Windows App`)
+				   psOut, _ := psCmd.StdoutPipe()
+				   grepCmd.Stdin = psOut
+				   grepCmd.Stdout = os.Stdout
+				   _ = psCmd.Start()
+				   _ = grepCmd.Start()
+				   _ = psCmd.Wait()
+				   _ = grepCmd.Wait()
+			   }
+			   if !isRunning {
+				   fmt.Println("[DEBUG] Launching Microsoft Remote Desktop and Windows App (background, no focus)...")
+				   // Try both apps
+				   _ = exec.Command("open", "-gj", "/Applications/Microsoft Remote Desktop.app").Run()
+				   _ = exec.Command("open", "-gj", "/Applications/Windows App.app").Run()
+				   // Wait for the app to launch, retry up to 20 times (15 seconds total)
+				   for i := 0; i < 20; i++ {
+					   time.Sleep(750 * time.Millisecond)
+					   fmt.Printf("[DEBUG] Checking if Microsoft Remote Desktop or Windows App is running (attempt %d)...\n", i+1)
+					   checkCmd1 := exec.Command("pgrep", "-f", "Microsoft Remote Desktop")
+					   checkCmd2 := exec.Command("pgrep", "-f", "Windows App")
+					   if err := checkCmd1.Run(); err == nil {
+						   isRunning = true
+						   fmt.Println("[DEBUG] Microsoft Remote Desktop is now running.")
+						   break
+					   } else if err := checkCmd2.Run(); err == nil {
+						   isRunning = true
+						   fmt.Println("[DEBUG] Windows App is now running.")
+						   break
+					   }
+				   }
+				   if !isRunning {
+					   fmt.Println("[DEBUG] Neither Microsoft Remote Desktop nor Windows App started after waiting.")
+				   }
+			   }
+
+			   // Extra wait to ensure the app is fully initialized
+			   if isRunning {
+				   fmt.Println("[DEBUG] App detected as running, waiting 2 seconds to ensure it is ready...")
+				   time.Sleep(2 * time.Second)
+			   }
+
 			   fmt.Println(style.Render("Opening RDP connection..."))
 			   c := exec.Command("open", tmpFile.Name())
 			   c.Stdin = os.Stdin
@@ -215,9 +273,12 @@ func main() {
 			   err = c.Run()
 			   if err != nil {
 				   fmt.Println(style.Render("RDP connection failed:"), err)
+			   } else {
+				   fmt.Println("[DEBUG] RDP file opened successfully.")
 			   }
 			   return
 		   }
+
 		   // Default to SSH
 		   var identityFile string
 		   if ids, ok := selectedMachine["identityFile"].([]interface{}); ok && len(ids) > 0 {
@@ -288,48 +349,48 @@ func main() {
 		   }
 		},
 	}
-	rootCmd.AddCommand(editCmd)
-	rootCmd.Execute()
+   rootCmd.AddCommand(editCmd)
+   rootCmd.Execute()
 }
 
 // containsShellSpecial returns true if the string contains shell-special characters
 func containsShellSpecial(s string) bool {
-	for _, c := range s {
-		if c == ' ' || c == '\t' || c == '\'' || c == '"' || c == '$' || c == '`' || c == '\\' {
-			return true
-		}
-	}
-	return false
+   for _, c := range s {
+	   if c == ' ' || c == '\t' || c == '\'' || c == '"' || c == '$' || c == '`' || c == '\\' {
+		   return true
+	   }
+   }
+   return false
 }
 
 // escapeSingleQuotes escapes single quotes for shell
 func escapeSingleQuotes(s string) string {
-	// Replace every ' with '\''
-	// This is the standard way to escape single quotes in POSIX shells
-	return stringReplaceAll(s, "'", "'\\''")
+   // Replace every ' with '\''
+   // This is the standard way to escape single quotes in POSIX shells
+   return stringReplaceAll(s, "'", "'\\''")
 }
 
 // stringReplaceAll is a helper for Go < 1.12 compatibility
 func stringReplaceAll(s, old, new string) string {
-	// Use strings.ReplaceAll if available, otherwise fallback to Replace
-	// (for Go 1.12+)
-	// This is a simplified version for this use case
-	for {
-		idx := indexOf(s, old)
-		if idx < 0 {
-			break
-		}
-		s = s[:idx] + new + s[idx+len(old):]
-	}
-	return s
+   // Use strings.ReplaceAll if available, otherwise fallback to Replace
+   // (for Go 1.12+)
+   // This is a simplified version for this use case
+   for {
+	   idx := indexOf(s, old)
+	   if idx < 0 {
+		   break
+	   }
+	   s = s[:idx] + new + s[idx+len(old):]
+   }
+   return s
 }
 
 // indexOf returns the index of the first instance of substr in s, or -1 if not present
 func indexOf(s, substr string) int {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+   for i := 0; i+len(substr) <= len(s); i++ {
+	   if s[i:i+len(substr)] == substr {
+		   return i
+	   }
+   }
+   return -1
 }
