@@ -33,7 +33,7 @@ func (m *selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "enter":
+		case "enter", " ":
 			if sel := m.list.SelectedItem(); sel != nil {
 				m.selected = sel.FilterValue()
 			}
