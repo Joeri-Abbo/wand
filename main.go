@@ -74,6 +74,20 @@ var style = lipgloss.NewStyle().
 	PaddingLeft(2).
 	Width(30)
 
+var debugMode bool
+
+func debugPrintln(a ...interface{}) {
+	if debugMode {
+		fmt.Println(a...)
+	}
+}
+
+func debugPrintf(format string, a ...interface{}) {
+	if debugMode {
+		fmt.Printf(format, a...)
+	}
+}
+
 func main() {
 	editCmd := &cobra.Command{
 		Use:   "edit",
@@ -210,58 +224,60 @@ func main() {
 
 			   // Check if Microsoft Remote Desktop is running
 			   isRunning := false
-			   fmt.Println("[DEBUG] Checking if Microsoft Remote Desktop or Windows App is running...")
+			   debugPrintln("[DEBUG] Checking if Microsoft Remote Desktop or Windows App is running...")
 			   isRunning = false
 			   checkCmd1 := exec.Command("pgrep", "-f", "Microsoft Remote Desktop")
 			   checkCmd2 := exec.Command("pgrep", "-f", "Windows App")
 			   if err := checkCmd1.Run(); err == nil {
 				   isRunning = true
-				   fmt.Println("[DEBUG] Microsoft Remote Desktop is already running.")
+				   debugPrintln("[DEBUG] Microsoft Remote Desktop is already running.")
 			   } else if err := checkCmd2.Run(); err == nil {
 				   isRunning = true
-				   fmt.Println("[DEBUG] Windows App is already running.")
+				   debugPrintln("[DEBUG] Windows App is already running.")
 			   } else {
-				   fmt.Println("[DEBUG] Neither Microsoft Remote Desktop nor Windows App is running.")
+				   debugPrintln("[DEBUG] Neither Microsoft Remote Desktop nor Windows App is running.")
 				   // Print process list for debugging
-				   psCmd := exec.Command("ps", "aux")
-				   grepCmd := exec.Command("egrep", `Microsoft Remote Desktop|Windows App`)
-				   psOut, _ := psCmd.StdoutPipe()
-				   grepCmd.Stdin = psOut
-				   grepCmd.Stdout = os.Stdout
-				   _ = psCmd.Start()
-				   _ = grepCmd.Start()
-				   _ = psCmd.Wait()
-				   _ = grepCmd.Wait()
+				   if debugMode {
+					   psCmd := exec.Command("ps", "aux")
+					   grepCmd := exec.Command("egrep", `Microsoft Remote Desktop|Windows App`)
+					   psOut, _ := psCmd.StdoutPipe()
+					   grepCmd.Stdin = psOut
+					   grepCmd.Stdout = os.Stdout
+					   _ = psCmd.Start()
+					   _ = grepCmd.Start()
+					   _ = psCmd.Wait()
+					   _ = grepCmd.Wait()
+				   }
 			   }
 			   if !isRunning {
-				   fmt.Println("[DEBUG] Launching Microsoft Remote Desktop and Windows App (background, no focus)...")
+				   debugPrintln("[DEBUG] Launching Microsoft Remote Desktop and Windows App (background, no focus)...")
 				   // Try both apps
 				   _ = exec.Command("open", "-gj", "/Applications/Microsoft Remote Desktop.app").Run()
 				   _ = exec.Command("open", "-gj", "/Applications/Windows App.app").Run()
 				   // Wait for the app to launch, retry up to 20 times (15 seconds total)
 				   for i := 0; i < 20; i++ {
 					   time.Sleep(750 * time.Millisecond)
-					   fmt.Printf("[DEBUG] Checking if Microsoft Remote Desktop or Windows App is running (attempt %d)...\n", i+1)
+					   debugPrintf("[DEBUG] Checking if Microsoft Remote Desktop or Windows App is running (attempt %d)...\n", i+1)
 					   checkCmd1 := exec.Command("pgrep", "-f", "Microsoft Remote Desktop")
 					   checkCmd2 := exec.Command("pgrep", "-f", "Windows App")
 					   if err := checkCmd1.Run(); err == nil {
 						   isRunning = true
-						   fmt.Println("[DEBUG] Microsoft Remote Desktop is now running.")
+						   debugPrintln("[DEBUG] Microsoft Remote Desktop is now running.")
 						   break
 					   } else if err := checkCmd2.Run(); err == nil {
 						   isRunning = true
-						   fmt.Println("[DEBUG] Windows App is now running.")
+						   debugPrintln("[DEBUG] Windows App is now running.")
 						   break
 					   }
 				   }
 				   if !isRunning {
-					   fmt.Println("[DEBUG] Neither Microsoft Remote Desktop nor Windows App started after waiting.")
+					   debugPrintln("[DEBUG] Neither Microsoft Remote Desktop nor Windows App started after waiting.")
 				   }
 			   }
 
 			   // Extra wait to ensure the app is fully initialized
 			   if isRunning {
-				   fmt.Println("[DEBUG] App detected as running, waiting 2 seconds to ensure it is ready...")
+				   debugPrintln("[DEBUG] App detected as running, waiting 2 seconds to ensure it is ready...")
 				   time.Sleep(2 * time.Second)
 			   }
 
@@ -274,7 +290,7 @@ func main() {
 			   if err != nil {
 				   fmt.Println(style.Render("RDP connection failed:"), err)
 			   } else {
-				   fmt.Println("[DEBUG] RDP file opened successfully.")
+				   debugPrintln("[DEBUG] RDP file opened successfully.")
 			   }
 			   return
 		   }
@@ -349,6 +365,7 @@ func main() {
 		   }
 		},
 	}
+   rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Show debug output")
    rootCmd.AddCommand(editCmd)
    rootCmd.Execute()
 }
