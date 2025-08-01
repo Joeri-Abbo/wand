@@ -112,6 +112,43 @@ func main() {
 		},
 	}
 
+	updateCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update the wand repository and rebuild the binary",
+		Run: func(cmd *cobra.Command, args []string) {
+			repoPath := filepath.Join(os.Getenv("HOME"), "wand")
+			if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+				fmt.Println("Repository not found at:", repoPath)
+				return
+			}
+			fmt.Println("Updating repository at:", repoPath)
+			c := exec.Command("git", "pull")
+			c.Dir = repoPath
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			err := c.Run()
+			if err != nil {
+				fmt.Println("Failed to update repository:", err)
+				return
+			}
+			fmt.Println("Repository updated successfully.")
+
+			fmt.Println("Building the binary...")
+			buildCmd := exec.Command("go", "build", "-o", "wand", "main.go")
+			buildCmd.Dir = repoPath
+			buildCmd.Stdin = os.Stdin
+			buildCmd.Stdout = os.Stdout
+			buildCmd.Stderr = os.Stderr
+			err = buildCmd.Run()
+			if err != nil {
+				fmt.Println("Failed to build the binary:", err)
+			} else {
+				fmt.Println("Binary built successfully.")
+			}
+		},
+	}
+
 	rootCmd := &cobra.Command{
 		Use:   "wand [group] [machine]",
 		Short: "A stylish CLI tool using lipgloss",
@@ -428,5 +465,6 @@ func main() {
 	}
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Show debug output")
 	rootCmd.AddCommand(editCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.Execute()
 }
