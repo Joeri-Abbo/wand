@@ -23,7 +23,7 @@ jobs:
           go build -v -o wand main.go
 
       - name: Archive build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: wand-binary
           path: wand
